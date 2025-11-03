@@ -1,0 +1,69 @@
+{
+  "id": null,
+  "title": ".NET Observability",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP Requests Duration",
+      "targets": [
+        {
+          "expr": "http_server_request_duration_seconds_sum",
+          "legendFormat": "{{method}} {{status_code}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Duration p95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le, method, status_code))",
+          "legendFormat": "p95 {{method}} {{status_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        }
+      },
+      "options": {
+        "legend": {
+          "showLegend": true
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active HTTP Requests",
+      "targets": [
+        {
+          "expr": "http_server_active_requests"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Forecast requests count",
+      "targets": [
+        {
+          "expr": "forecast_requests_total"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Application Logs",
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "expr": "{service_name=\"WebAPI\"}"
+        }
+      ]
+    }
+  ]
+}

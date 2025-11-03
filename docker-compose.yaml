@@ -1,0 +1,121 @@
+﻿services:
+  # .NET WebAPI
+  webapi:
+    image: webapi
+    container_name: webapi
+    build:
+      context: .
+      dockerfile: WebAPI/Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_ENVIRONMENT=Development
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    depends_on:
+      otel-collector:
+        condition: service_started
+    networks:
+      - monitoring-network
+
+  # OpenTelemetry Collector - receives, processes, and exports telemetry data
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP http receiver
+      - "13133:13133" # health_check extension
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel/config.yaml
+    networks:
+      - monitoring-network
+    depends_on:
+      prometheus:
+          condition: service_healthy
+      tempo:
+          condition: service_started
+      loki:
+          condition: service_healthy
+
+  # Prometheus — scrapes metrics from OpenTelemetry Collector
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "9090:9090" # Prometheus UI
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - monitoring-network
+
+  # Tempo — stores traces from OpenTelemetry Collector
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200" # Tempo API
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+    networks:
+      - monitoring-network
+
+  # Loki — stores logs from OpenTelemetry Collector
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "3100:3100" # Loki API
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+    networks:
+      - monitoring-network
+
+  # Grafana — dashboards for metrics, logs, traces
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      prometheus:
+          condition: service_healthy
+      tempo:
+          condition: service_started
+      loki:
+          condition: service_healthy
+    networks:
+      - monitoring-network
+
+networks:
+  monitoring-network:
+#    name: monitoring-network
+    driver: bridge
